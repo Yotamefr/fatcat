@@ -1,0 +1,102 @@
+version: '3.7'
+
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - "./rabbitmq_data:/var/lib/rabbitmq"
+    restart: unless-stopped
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 20s
+      timeout: 30s
+      retries: 10
+    networks:
+      - fatcat
+  
+  mongodb:
+    image: mongo:latest
+    ports:
+      - "27017:27017"
+    volumes:
+      - "./mongo_data:/data/db"
+    restart: unless-stopped
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      retries: 10
+      interval: 20s
+      start_period: 40s
+    networks:
+      - fatcat
+
+  elasticsearch:
+    image: elasticsearch:8.9.1
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      network.host: 0.0.0.0
+      ES_JAVA_OPTS: -Xms1g -Xmx1g
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -vq '\"status\": \"red\"'"]
+      retries: 10
+      interval: 20s
+    volumes:
+      - "./elasticsearch_data:/usr/share/elasticsearch/data"
+    restart: unless-stopped
+    networks:
+      - fatcat
+  
+  fatcat-worker:
+    build: ./fatcat-worker
+    volumes:
+      - "./fatcat-worker/config-example.yml:/app/config.yml"
+      - "./worker-example:/app/worker"
+    restart: unless-stopped
+    environment:
+      FATCAT_WORKER_NAME: worker1
+      FATCAT_RABBIT_HOSTNAME: rabbitmq
+      FATCAT_MONGO_HOSTNAME: mongodb
+      ELASTIC_HOST_LOGGER: elasticsearch:9200
+      ELASTIC_INDEX_LOGGER: fatcat_logs
+      ELASTIC_FLUSH_PERIOD_LOGGER: 0.5
+      ELASTIC_BATCH_SIZE_LOGGER: 1
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - fatcat
+  
+  fatcat-server:
+    build: ./fatcat-server
+    restart: unless-stopped
+    environment:
+      FATCAT_SERVER_NAME: server1
+      FATCAT_RABBIT_HOSTNAME: rabbitmq
+      FATCAT_MONGO_HOSTNAME: mongodb
+      ELASTIC_HOST_LOGGER: elasticsearch:9200
+      ELASTIC_INDEX_LOGGER: fatcat_logs
+      ELASTIC_FLUSH_PERIOD_LOGGER: 0.5
+      ELASTIC_BATCH_SIZE_LOGGER: 1
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - fatcat
+
+networks:
+  fatcat:
+    driver: bridge

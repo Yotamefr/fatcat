@@ -1,0 +1,8 @@
+[submodule "fatcat-server"]
+	path = fatcat-server
+	url = https://github.com/Yotamefr/fatcat-server
+	branch = dev
+[submodule "fatcat-worker"]
+	path = fatcat-worker
+	url = https://github.com/Yotamefr/fatcat-worker
+	branch = dev
